@@ -9,7 +9,6 @@ module WeixinRailsMiddleware
       before_filter :check_is_encrypt, only: [:index, :reply]
       before_filter :initialize_adapter, :check_weixin_legality, only: [:index, :reply]
       before_filter :set_weixin_public_account, :set_weixin_message, only: :reply
-      #before_filter :set_keyword, only: :reply
     end
 
     module ClassMethods
@@ -203,12 +202,6 @@ module WeixinRailsMiddleware
       end
       # Get the current weixin message
       @weixin_message ||= Message.factory(param_xml)
-    end
-
-    def set_keyword
-      @keyword = @weixin_message.Content  || # 文本消息
-                  @weixin_message.EventKey || # 事件推送
-                  @weixin_message.Recognition # 接收语音识别结果
     end
 
     def run_responder(request)

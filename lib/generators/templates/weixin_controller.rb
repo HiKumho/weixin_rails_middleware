@@ -1,261 +1,135 @@
 # encoding: utf-8
-# 1, @weixin_message: 获取微信所有参数.
-# 2, @weixin_public_account: 如果配置了public_account_class选项,则会返回当前实例,否则返回nil.
-# 3, @keyword: 目前微信只有这三种情况存在关键字: 文本消息, 事件推送, 接收语音识别结果
-WeixinRailsMiddleware::WeixinController.class_eval do
+# @params @weixin_message(request)   获取微信所有参数.
+# @params @weixin_public_account     如果配置了public_account_class选项,则会返回当前实例,否则返回 nil
+# @detail WeixinRailsMiddleware::Responder
+# @thanks https://github.com/Eric-Guo/wechat
+class WeixinController < ActionController::Base
+  include WeixinRailsMiddleware::Responder
 
-  def reply
-    render xml: send("response_#{@weixin_message.MsgType}_message", {})
+  # default text responder when no other match
+  on :text do |request, content|
+    request.reply.text "echo: #{content}" # Just echo
   end
 
-  private
+  # When receive 'help', will trigger this responder
+  on :text, with: 'help' do |request|
+    request.reply.text 'help content'
+  end
 
-    def response_text_message(options={})
-      reply_text_message("Your Message: #{@keyword}")
+  # When receive '<n>news', will match and will get count as <n> as parameter
+  on :text, with: /^(\d+) news$/ do |request, count|
+    # Wechat article can only contain max 8 items, large than 8 will be dropped.
+    news = (1..count.to_i).each_with_object([]) { |n, memo| memo << { title: 'News title', content: "No. #{n} news content" } }
+    request.reply.news(news) do |article, n, index| # article is return object
+      article.item title: "#{index} #{n[:title]}", description: n[:content], pic_url: 'http://www.baidu.com/img/bdlogo.gif', url: 'http://www.baidu.com/'
     end
+  end
 
-    # <Location_X>23.134521</Location_X>
-    # <Location_Y>113.358803</Location_Y>
-    # <Scale>20</Scale>
-    # <Label><![CDATA[位置信息]]></Label>
-    def response_location_message(options={})
-      @lx    = @weixin_message.Location_X
-      @ly    = @weixin_message.Location_Y
-      @scale = @weixin_message.Scale
-      @label = @weixin_message.Label
-      reply_text_message("Your Location: #{@lx}, #{@ly}, #{@scale}, #{@label}")
+  on :event, with: 'subscribe' do |request|
+    request.reply.text "#{request[:FromUserName]} subscribe now"
+  end
+
+  # When unsubscribe user scan qrcode qrscene_xxxxxx to subscribe in public account
+  # notice user will subscribe public account at the same time, so wechat won't trigger subscribe event anymore
+  on :scan, with: 'qrscene_xxxxxx' do |request, ticket|
+    request.reply.text "Unsubscribe user #{request[:FromUserName]} Ticket #{ticket}"
+  end
+
+  # When subscribe user scan scene_id in public account
+  on :scan, with: 'scene_id' do |request, ticket|
+    request.reply.text "Subscribe user #{request[:FromUserName]} Ticket #{ticket}"
+  end
+
+  # When no any on :scan responder can match subscribe user scanned scene_id
+  on :event, with: 'scan' do |request|
+    if request[:EventKey].present?
+      request.reply.text "event scan got EventKey #{request[:EventKey]} Ticket #{request[:Ticket]}"
     end
+  end
 
-    # <PicUrl><![CDATA[this is a url]]></PicUrl>
-    # <MediaId><![CDATA[media_id]]></MediaId>
-    def response_image_message(options={})
-      @media_id = @weixin_message.MediaId # 可以调用多媒体文件下载接口拉取数据。
-      @pic_url  = @weixin_message.PicUrl  # 也可以直接通过此链接下载图片, 建议使用carrierwave.
-      reply_image_message(generate_image(@media_id))
+  # When enterprise user press menu BINDING_QR_CODE and success to scan bar code
+  on :scan, with: 'BINDING_QR_CODE' do |request, scan_result, scan_type|
+    request.reply.text "User #{request[:FromUserName]} ScanResult #{scan_result} ScanType #{scan_type}"
+  end
+
+  # Except QR code, wechat can also scan CODE_39 bar code in enterprise account
+  on :scan, with: 'BINDING_BARCODE' do |message, scan_result|
+    if scan_result.start_with? 'CODE_39,'
+      message.reply.text "User: #{message[:FromUserName]} scan barcode, result is #{scan_result.split(',')[1]}"
     end
+  end
 
-    # <Title><![CDATA[公众平台官网链接]]></Title>
-    # <Description><![CDATA[公众平台官网链接]]></Description>
-    # <Url><![CDATA[url]]></Url>
-    def response_link_message(options={})
-      @title = @weixin_message.Title
-      @desc  = @weixin_message.Description
-      @url   = @weixin_message.Url
-      reply_text_message("回复链接信息")
-    end
+  # When user clicks the menu button
+  on :click, with: 'BOOK_LUNCH' do |request, key|
+    request.reply.text "User: #{request[:FromUserName]} click #{key}"
+  end
 
-    # <MediaId><![CDATA[media_id]]></MediaId>
-    # <Format><![CDATA[Format]]></Format>
-    def response_voice_message(options={})
-      @media_id = @weixin_message.MediaId # 可以调用多媒体文件下载接口拉取数据。
-      @format   = @weixin_message.Format
-      # 如果开启了语音翻译功能，@keyword则为翻译的结果
-      # reply_text_message("回复语音信息: #{@keyword}")
-      reply_voice_message(generate_voice(@media_id))
-    end
+  # When user views URL in the menu button
+  on :view, with: 'http://wechat.somewhere.com/view_url' do |request, view|
+    request.reply.text "#{request[:FromUserName]} view #{view}"
+  end
 
-    # <MediaId><![CDATA[media_id]]></MediaId>
-    # <ThumbMediaId><![CDATA[thumb_media_id]]></ThumbMediaId>
-    def response_video_message(options={})
-      @media_id = @weixin_message.MediaId # 可以调用多媒体文件下载接口拉取数据。
-      # 视频消息缩略图的媒体id，可以调用多媒体文件下载接口拉取数据。
-      @thumb_media_id = @weixin_message.ThumbMediaId
-      reply_text_message("回复视频信息")
-    end
+  # When user sends an image
+  on :image do |request|
+    request.reply.image(request[:MediaId]) # Echo the sent image to user
+  end
 
-    def response_event_message(options={})
-      event_type = @weixin_message.Event
-      method_name = "handle_#{event_type.downcase}_event"
-      if self.respond_to? method_name, true
-        send(method_name)
-      else
-        send("handle_undefined_event")
-      end
-    end
+  # When user sends a voice
+  on :voice do |request|
+    request.reply.voice(request[:MediaId]) # Echo the sent voice to user
+  end
 
-    # 关注公众账号
-    def handle_subscribe_event
-      if @keyword.present?
-        # 扫描带参数二维码事件: 1. 用户未关注时，进行关注后的事件推送
-        return reply_text_message("扫描带参数二维码事件: 1. 用户未关注时，进行关注后的事件推送, keyword: #{@keyword}")
-      end
-      reply_text_message("关注公众账号")
-    end
+  # When user sends a video
+  on :video do |request|
+    nickname = wechat.user(request[:FromUserName])['nickname'] # Call wechat api to get sender nickname
+    request.reply.video(request[:MediaId], title: 'Echo', description: "Got #{nickname} sent video") # Echo the sent video to user
+  end
 
-    # 取消关注
-    def handle_unsubscribe_event
-      Rails.logger.info("取消关注")
-    end
+  # When user sends location message with label
+  on :label_location do |request|
+    request.reply.text("Label: #{request[:Label]} Location_X: #{request[:Location_X]} Location_Y: #{request[:Location_Y]} Scale: #{request[:Scale]}")
+  end
 
-    # 扫描带参数二维码事件: 2. 用户已关注时的事件推送
-    def handle_scan_event
-      reply_text_message("扫描带参数二维码事件: 2. 用户已关注时的事件推送, keyword: #{@keyword}")
-    end
+  # When user sends location
+  on :location do |request|
+    request.reply.text("Latitude: #{request[:Latitude]} Longitude: #{request[:Longitude]} Precision: #{request[:Precision]}")
+  end
 
-    def handle_location_event # 上报地理位置事件
-      @lat = @weixin_message.Latitude
-      @lgt = @weixin_message.Longitude
-      @precision = @weixin_message.Precision
-      reply_text_message("Your Location: #{@lat}, #{@lgt}, #{@precision}")
-    end
+  on :event, with: 'unsubscribe' do |request|
+    request.reply.success # user can not receive this message
+  end
 
-    # 点击菜单拉取消息时的事件推送
-    def handle_click_event
-      reply_text_message("你点击了: #{@keyword}")
-    end
+  # When user enters the app / agent app
+  on :event, with: 'enter_agent' do |request|
+    request.reply.text "#{request[:FromUserName]} enter agent app now"
+  end
 
-    # 点击菜单跳转链接时的事件推送
-    def handle_view_event
-      Rails.logger.info("你点击了: #{@keyword}")
-    end
+  # When batch job "create/update user (incremental)" is finished.
+  on :batch_job, with: 'sync_user' do |request, batch_job|
+    request.reply.text "sync_user job #{batch_job[:JobId]} finished, return code #{batch_job[:ErrCode]}, return message #{batch_job[:ErrMsg]}"
+  end
 
-    # 帮助文档: https://github.com/lanrion/weixin_authorize/issues/22
+  # When batch job "replace user (full sync)" is finished.
+  on :batch_job, with: 'replace_user' do |request, batch_job|
+    request.reply.text "replace_user job #{batch_job[:JobId]} finished, return code #{batch_job[:ErrCode]}, return message #{batch_job[:ErrMsg]}"
+  end
 
-    # 由于群发任务提交后，群发任务可能在一定时间后才完成，因此，群发接口调用时，仅会给出群发任务是否提交成功的提示，若群发任务提交成功，则在群发任务结束时，会向开发者在公众平台填写的开发者URL（callback URL）推送事件。
+  # When batch job "invite user" is finished.
+  on :batch_job, with: 'invite_user' do |request, batch_job|
+    request.reply.text "invite_user job #{batch_job[:JobId]} finished, return code #{batch_job[:ErrCode]}, return message #{batch_job[:ErrMsg]}"
+  end
 
-    # 推送的XML结构如下（发送成功时）：
+  # When batch job "replace department (full sync)" is finished.
+  on :batch_job, with: 'replace_party' do |request, batch_job|
+    request.reply.text "replace_party job #{batch_job[:JobId]} finished, return code #{batch_job[:ErrCode]}, return message #{batch_job[:ErrMsg]}"
+  end
 
-    # <xml>
-    # <ToUserName><![CDATA[gh_3e8adccde292]]></ToUserName>
-    # <FromUserName><![CDATA[oR5Gjjl_eiZoUpGozMo7dbBJ362A]]></FromUserName>
-    # <CreateTime>1394524295</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[MASSSENDJOBFINISH]]></Event>
-    # <MsgID>1988</MsgID>
-    # <Status><![CDATA[sendsuccess]]></Status>
-    # <TotalCount>100</TotalCount>
-    # <FilterCount>80</FilterCount>
-    # <SentCount>75</SentCount>
-    # <ErrorCount>5</ErrorCount>
-    # </xml>
-    def handle_masssendjobfinish_event
-      Rails.logger.info("回调事件处理")
-    end
+  # mass sent job finish result notification
+  on :event, with: 'masssendjobfinish' do |request|
+    # https://mp.weixin.qq.com/wiki?action=doc&id=mp1481187827_i0l21&t=0.03571905015619936#8
+    request.reply.success # request is XML result hash.
+  end
 
-    # <xml>
-    # <ToUserName><![CDATA[gh_7f083739789a]]></ToUserName>
-    # <FromUserName><![CDATA[oia2TjuEGTNoeX76QEjQNrcURxG8]]></FromUserName>
-    # <CreateTime>1395658920</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[TEMPLATESENDJOBFINISH]]></Event>
-    # <MsgID>200163836</MsgID>
-    # <Status><![CDATA[success]]></Status>
-    # </xml>
-    # 推送模板信息回调，通知服务器是否成功推送
-    def handle_templatesendjobfinish_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # <xml>
-    # <ToUserName><![CDATA[toUser]]></ToUserName>
-    # <FromUserName><![CDATA[FromUser]]></FromUserName>
-    # <CreateTime>123456789</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[card_pass_check]]></Event>  //不通过为card_not_pass_check
-    # <CardId><![CDATA[cardid]]></CardId>
-    # </xml>
-    # 卡券审核事件，通知服务器卡券已(未)通过审核
-    def handle_card_pass_check_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    def handle_card_not_pass_check_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # <xml>
-    # <ToUserName><![CDATA[toUser]]></ToUserName>
-    # <FromUserName><![CDATA[FromUser]]></FromUserName>
-    # <FriendUserName><![CDATA[FriendUser]]></FriendUserName>
-    # <CreateTime>123456789</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[user_get_card]]></Event>
-    # <CardId><![CDATA[cardid]]></CardId>
-    # <IsGiveByFriend>1</IsGiveByFriend>
-    # <UserCardCode><![CDATA[12312312]]></UserCardCode>
-    # <OuterId>0</OuterId>
-    # </xml>
-    # 卡券领取事件推送
-    def handle_user_get_card_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # <xml>
-    # <ToUserName><![CDATA[toUser]]></ToUserName>
-    # <FromUserName><![CDATA[FromUser]]></FromUserName>
-    # <CreateTime>123456789</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[user_del_card]]></Event>
-    # <CardId><![CDATA[cardid]]></CardId>
-    # <UserCardCode><![CDATA[12312312]]></UserCardCode>
-    # </xml>
-    # 卡券删除事件推送
-    def handle_user_del_card_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # <xml>
-    # <ToUserName><![CDATA[toUser]]></ToUserName>
-    # <FromUserName><![CDATA[FromUser]]></FromUserName>
-    # <CreateTime>123456789</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[user_consume_card]]></Event>
-    # <CardId><![CDATA[cardid]]></CardId>
-    # <UserCardCode><![CDATA[12312312]]></UserCardCode>
-    # <ConsumeSource><![CDATA[(FROM_API)]]></ConsumeSource>
-    # </xml>
-    # 卡券核销事件推送
-    def handle_user_consume_card_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # <xml>
-    # <ToUserName><![CDATA[toUser]]></ToUserName>
-    # <FromUserName><![CDATA[FromUser]]></FromUserName>
-    # <CreateTime>123456789</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[user_view_card]]></Event>
-    # <CardId><![CDATA[cardid]]></CardId>
-    # <UserCardCode><![CDATA[12312312]]></UserCardCode>
-    # </xml>
-    # 卡券进入会员卡事件推送
-    def handle_user_view_card_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # <xml>
-    # <ToUserName><![CDATA[toUser]]></ToUserName>
-    # <FromUserName><![CDATA[FromUser]]></FromUserName>
-    # <CreateTime>123456789</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[user_enter_session_from_card]]></Event>
-    # <CardId><![CDATA[cardid]]></CardId>
-    # <UserCardCode><![CDATA[12312312]]></UserCardCode>
-    # </xml>
-    # 从卡券进入公众号会话事件推送
-    def handle_user_enter_session_from_card_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # <xml>
-    # <ToUserName><![CDATA[toUser]]></ToUserName>
-    # <FromUserName><![CDATA[fromUser]]></FromUserName>
-    # <CreateTime>1408622107</CreateTime>
-    # <MsgType><![CDATA[event]]></MsgType>
-    # <Event><![CDATA[poi_check_notify]]></Event>
-    # <UniqId><![CDATA[123adb]]></UniqId>
-    # <PoiId><![CDATA[123123]]></PoiId>
-    # <Result><![CDATA[fail]]></Result>
-    # <Msg><![CDATA[xxxxxx]]></Msg>
-    # </xml>
-    # 门店审核事件推送
-    def handle_poi_check_notify_event
-      Rails.logger.info("回调事件处理")
-    end
-
-    # 未定义的事件处理
-    def handle_undefined_event
-      Rails.logger.info("回调事件处理")
-    end
-
+  # If no match above will fallback to below
+  on :fallback, respond: 'fallback message'
 end
