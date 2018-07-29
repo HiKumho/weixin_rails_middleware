@@ -1,5 +1,5 @@
 # encoding: utf-8
-# @detail https://github.com/Eric-Guo/wechat/blob/master/lib/wechat/responder.rb
+require 'English'
 module WeixinRailsMiddleware
   module Responder
     extend ActiveSupport::Concern
@@ -13,6 +13,7 @@ module WeixinRailsMiddleware
     end
 
     module ClassMethods
+      # @detail https://github.com/Eric-Guo/wechat/blob/master/lib/wechat/responder.rb
       def on(message_type, with: nil, respond: nil, &block)
         raise 'Unknow message type' unless [:text, :image, :voice, :video, :shortvideo, :link, :event, :click, :view, :scan, :batch_job, :location, :label_location, :fallback].include?(message_type)
         config = respond.nil? ? {} : { respond: respond }
