@@ -38,6 +38,20 @@ module WeixinRailsMiddleware
     end
   end
 
+  # <xml>
+  # <ToUserName><![CDATA[toUser]]></ToUserName>
+  # <FromUserName><![CDATA[fromUser]]></FromUserName>
+  # <CreateTime>12345678</CreateTime>
+  # <MsgType><![CDATA[success]]></MsgType>
+  # <Content><![CDATA[Hello]]></Content>
+  # </xml>
+  class SuccessMessage < ReplyMessage
+    def initialize
+      super
+      @MsgType = 'success'
+    end
+  end
+
   class Music
     include ROXML
     xml_accessor :Title, :cdata => true

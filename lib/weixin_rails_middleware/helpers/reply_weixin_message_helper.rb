@@ -12,6 +12,13 @@ module WeixinRailsMiddleware
       encrypt_message message.to_xml
     end
 
+    def reply_success_message(from=nil, to=nil)
+      message = SuccessMessage.new
+      message.FromUserName = from || @weixin_message.ToUserName
+      message.ToUserName   = to   || @weixin_message.FromUserName
+      encrypt_message message.to_xml
+    end
+
     def generate_music(title, desc, music_url, hq_music_url)
       music = Music.new
       music.Title       = title
