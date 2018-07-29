@@ -19,9 +19,11 @@ class WeixinController < ActionController::Base
   # When receive '<n>news', will match and will get count as <n> as parameter
   on :text, with: /^(\d+) news$/ do |request, count|
     # weixin article can only contain max 8 items, large than 8 will be dropped.
-    reply_news_message (1..count.to_i).each_with_index.map do |article, index|
-      generate_article('News title', "No. #{index} news content", 'http://www.baidu.com/img/bdlogo.gif', 'http://www.baidu.com/')
+    articles = 1.upto(count.to_i).map do |i|
+      generate_article("News title - #{i}", "No. #{i} news content", 'http://www.baidu.com/img/bdlogo.gif', 'http://www.baidu.com/')
     end
+
+    reply_news_message articles
   end
 
   on :event, with: 'subscribe' do |request|
