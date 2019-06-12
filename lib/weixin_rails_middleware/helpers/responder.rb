@@ -6,6 +6,12 @@ module WeixinRailsMiddleware
     include ReplyWeixinMessageHelper
 
     included do
+      if respond_to?(:verify_authenticity_token)
+        skip_before_action :verify_authenticity_token
+      else
+        skip_before_action :verify_authenticity_token, raise: false
+      end
+
       before_action :check_is_encrypt, only: [:index, :reply]
       before_action :initialize_adapter, :check_weixin_legality, only: [:index, :reply]
       before_action :set_weixin_public_account, :set_weixin_message, only: :reply
