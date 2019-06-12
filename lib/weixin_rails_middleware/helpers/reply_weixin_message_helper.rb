@@ -126,6 +126,10 @@ module WeixinRailsMiddleware
       encrypt_message message.to_xml
     end
 
+    def reply_success_message
+      encrypt_message SuccessMessage.new.to_xml
+    end
+
     private
 
       def encrypt_message(msg_xml)

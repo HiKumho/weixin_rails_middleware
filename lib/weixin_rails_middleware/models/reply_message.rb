@@ -26,6 +26,20 @@ module WeixinRailsMiddleware
   # <ToUserName><![CDATA[toUser]]></ToUserName>
   # <FromUserName><![CDATA[fromUser]]></FromUserName>
   # <CreateTime>12345678</CreateTime>
+  # <MsgType><![CDATA[success]]></MsgType>
+  # </xml>
+
+  class SuccessMessage < ReplyMessage
+    def initialize
+      super
+      @MsgType = 'success'
+    end
+  end
+
+  # <xml>
+  # <ToUserName><![CDATA[toUser]]></ToUserName>
+  # <FromUserName><![CDATA[fromUser]]></FromUserName>
+  # <CreateTime>12345678</CreateTime>
   # <MsgType><![CDATA[text]]></MsgType>
   # <Content><![CDATA[Hello]]></Content>
   # </xml>
