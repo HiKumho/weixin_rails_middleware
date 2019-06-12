@@ -14,6 +14,7 @@ require "weixin_rails_middleware/helpers/prpcrypt"
 require "weixin_rails_middleware/helpers/reply_weixin_message_helper"
 require "weixin_rails_middleware/helpers/unique_token_helper"
 require "weixin_rails_middleware/helpers/auto_generate_weixin_token_secret_key"
+require "weixin_rails_middleware/helpers/responder"
 
 module WeixinRailsMiddleware
 
