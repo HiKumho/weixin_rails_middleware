@@ -94,7 +94,7 @@ thanks [Eric-Guo/wechat](https://github.com/Eric-Guo/wechat)
 # @params @weixin_public_account     如果配置了 public_account_class 选项,则会返回当前实例,否则返回 nil
 # @detail WeixinRailsMiddleware::Responder
 # @thanks https://github.com/Eric-Guo/wechat
-class ResponderController < ActionController::Base
+class RespondersController < ActionController::Base
   include WeixinRailsMiddleware::Responder
 
   # default text responder when no other match
